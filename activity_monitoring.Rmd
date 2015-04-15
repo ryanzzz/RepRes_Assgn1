@@ -1,0 +1,193 @@
+Personal Activity Monitoring
+================================================
+
+## Introduction
+
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+## Include required libraries
+
+```{r}
+library(lattice)
+```
+
+## Load and preprocess the data
+
+A zip file contatining the data was downloaded from cloudfront link (https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip) on April 13th, 2015 into a data folder in the working directory.
+
+```{r}
+# check if a data folder exists; if not then create one
+wdpath <- getwd()
+if (!file.exists("data")) {
+    dir.create("data")
+}
+
+# file URL and destination file
+fileUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+destfile <- "./data/activity.zip"
+
+# download the file and note the time
+download.file(fileUrl, destfile=destfile, method="curl", quiet=TRUE)
+dateDownloaded <- date()
+```
+
+Unzip the relevant csv file and load into R
+
+```{r}
+# from the zip file, read out the containing csv file
+data <- read.csv(unz("./data/activity.zip", "activity.csv"))
+```
+
+The three columns in the data was then broken up into three vectors: date, steps, interval, with NA data filtered out
+
+```{r}
+# assign variables to the columns
+steps <- data$steps[!is.na(data$steps)]
+date <- data$date[!is.na(data$steps)]
+interval <- data$interval[!is.na(data$steps)]
+```
+## Mean total number of steps taken per day
+
+Total number of steps for each date is calculated and a histogram of the total number of steps per day was plotted.
+
+```{r}
+# get the total number of steps each day
+total_steps <- tapply(steps, as.factor(date), FUN = sum)
+
+# plot a histogram of the total number of steps taken each day
+hist(total_steps, breaks = 10, 
+     xlab = "Total number of steps per day", 
+     ylab = "Count", 
+     main = "Distribution of total steps per day", 
+     col = "lightgreen")
+```
+
+The mean and median were also calculated.
+
+```{r}
+mean(total_steps, na.rm=TRUE)
+```
+```{r}
+median(total_steps, na.rm=TRUE)
+```
+
+## Average daily activity pattern
+
+The average steps were calculated using the tapply function on the factor variable. A time series was plotted of the average steps vs the time interval. 
+
+```{r}
+# create a factor vector for the time intervals
+interval_factor <- factor(interval)
+levels <- nlevels(interval_factor)
+interval_factor <- factor(interval)[1:levels]
+
+# calculate the average number of steps for each 5 minute period
+average_steps <- tapply(steps, as.factor(interval), FUN = mean, na.rm = TRUE)
+
+# plot the time series
+plot(average_steps ~ interval[1:levels], 
+       type = "l", 
+       xlab = "Time interval",
+       ylab = "Average steps", 
+       main = "Time series - average steps vs time interval")
+```
+
+Then a data frame was constructed of the average steps and time intervals. The data frame was sorted by average steps from high to low to get the maximum and the associated time interval was taken.
+
+```{r}
+# create a data frame of average steps and time interval side by side
+df_steps_interval <- data.frame(interval_factor, average_steps)
+
+# sort the data frame from high to low by the average steps per day
+df_steps_interval <- df_steps_interval[order(df_steps_interval$average_steps, decreasing = TRUE),]
+
+# the first row contains the relevant time interval
+time_interval_max <- df_steps_interval$interval_factor[1]
+time_interval_max <- as.numeric(as.character(time_interval_max))
+time_interval_max
+```
+
+## Imputing missing values
+
+There were a lot of NA values in the data set for the number of steps. The number was computed as follows:
+
+```{r}
+# number of NA values in original dataset
+length(steps[is.na(data$steps)])
+```
+
+These null entries were given new values based on the corresponding 5 minute interval for the average steps that was computed previously. First copy the original steps data into a new vector, and then find the NA values for this vector using sapply and loo, replacing each one by the corresponding value in the average steps data. Note that the average steps data only has 60/5*24=288 valid values, so NA value replacement needs to start over and reuse the average steps data once it is exhausted.
+
+```{r}
+# take a copy of the original steps vector
+new_steps <- data$steps
+
+# fill in each NA value by taking the average for that time interval
+for (i in which(sapply(new_steps, is.na))) {
+  
+# if a 24-hour worth of average steps data is used up let it start over again
+    j <- i%%288+1
+    
+# round the average steps to integers
+    new_steps[i] <- round(average_steps[j], digits=0)
+}
+```
+
+The new vector was factored by day and its steps were summed. A histogram of the total number of steps per day with imputted values was plotted with 11 bins.
+
+```{r}
+# get the total number of steps for each day
+new_total_steps <- tapply(new_steps, as.factor(data$date), FUN = sum)
+
+# plot a histogram of the total number of steps taken each day
+hist(new_total_steps, breaks = 10, 
+          xlab = "Total number of steps per day", 
+          ylab = "Count",
+          main = "Distribution of total steps per day after imputted values", 
+          col = "lightgreen")
+```
+
+The mean and median were also calculated.
+
+```{r}
+mean(new_total_steps)
+```
+```{r}
+median(new_total_steps)
+```
+
+The mean values of the original and stuffed data are close as the NA replacement uses the mean value. Some small difference was created by rounding.
+
+The median values of the original and stuffed data are different. The median value of the stuffed data is skewed towards the mean value because many values in the data array are replaced with the mean value.
+
+## Activity patterns in weekdays and weekends
+
+The date vector was converted from a factor type to a date. It was then run through the weekdays() function to determine which day each date fell into. Using this data a factor was constructed for weekdays and weekends. A time series was plotted of the average number of steps vs time interval for both weekdays and weekends.
+
+```{r}
+# determine the day of the week for each date
+whichDay <- weekdays(as.Date(data$date))
+
+# weekend day vector to compare with
+weekendDays <- c("Saturday", "Sunday")
+
+# construct a DF for these 4 values
+DF <- data.frame(interval_factor, new_steps, whichDay)
+
+# add a logical column to indicate whether a day ot type weekend/weekday
+isWeekend <- DF$whichDay %in% weekendDays
+
+# convert isWeekend to a factor variable
+DF$dayType = factor(isWeekend,labels = c("Weekday","Weekend"))
+
+# plot the time series
+xyplot(new_steps ~ interval | dayType, 
+       data = DF,
+       layout = c(1,2), 
+       type = "l", 
+       xlab = "Time interval", 
+       ylab = "Number of steps", 
+       main = "Time series of number of steps vs time interval") 
+```
